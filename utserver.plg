@@ -3,18 +3,6 @@
 
 <!--
 This Plugin installs and controls uTorrent server (Linux).
-
-version: 0.3.8
-- fixing location of the utorrent package
-
-version: 0.3.7
-- changed utserver_stop() section
-
-version: 0.3.6
-- settings correctly saved to utserver.conf
-
-version: 0.3.5
-- settings saved properly to confing file while plugins is disabled
 -->
 
 <FILE Name="/boot/config/plugins/utserver/utserver.png">
