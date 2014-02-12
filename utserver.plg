@@ -1,0 +1,590 @@
+<?xml version='1.0' standalone='yes'?>
+<PLUGIN>
+
+<!--
+This Plugin installs and controls uTorrent server (Linux).
+
+version: 0.3.8
+- fixing location of the utorrent package
+
+version: 0.3.7
+- changed utserver_stop() section
+
+version: 0.3.6
+- settings correctly saved to utserver.conf
+
+version: 0.3.5
+- settings saved properly to confing file while plugins is disabled
+-->
+
+<FILE Name="/boot/config/plugins/utserver/utserver.png">
+<URL>http://forum.utorrent.com/img/avatars/120492.png</URL>
+</FILE>
+
+<!-- clean up previous install -->
+<FILE Name="/tmp/utserver-cleanup" Run="/bin/bash">
+<INLINE>
+<![CDATA[
+rm -f /etc/rc.d/rc.utserver
+rm -f -R /usr/local/emhttp/plugins/utserver
+rm /tmp/utserver-cleanup
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/boot/config/plugins/utserver/utserver.cfg">
+<INLINE>
+<![CDATA[
+# utserver configuration
+SERVICE="disable"
+INSTALLDIR="/mnt/cache/apps/utserver"
+DATADIR="/mnt/cache/apps/utserver/downloads"
+TEMPDIR="/mnt/cache/apps/utserver/temp"
+PORT="8003"
+RUNAS="nobody"
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/etc/rc.d/rc.utserver" Mode="0770">
+<INLINE>
+<![CDATA[
+#!/bin/sh
+# Start/stop/restart/enable/disable utserver.
+
+utserver_start()
+{
+	# no-op if not enabled
+	if [ $SERVICE != "enable" ]; then
+		return
+	fi
+
+	# no-op if already running
+	if [ -r /var/run/utserver/utserver-$PORT.pid ]; then
+		return
+	fi
+
+	# if directory doesn't exist or utserver is not found, install it
+	if [[ "$INSTALLDIR" != "" &&  ! -e "$INSTALLDIR/utserver" ]]; then
+		echo "installing utserver..."
+		utserver_install
+	fi
+	if [ ! -e "$INSTALLDIR/utserver.conf" ]; then
+		write_utconfig
+	fi
+	echo "Starting utserver version $VERSION"
+	sleep 2
+	CMDLINE="sudo -u $RUNAS $INSTALLDIR/utserver -settingspath $INSTALLDIR -configfile $INSTALLDIR/utserver.conf -pidfile /var/run/utserver/utserver-$PORT.pid -logfile $INSTALLDIR/utserver.log -daemon 2>&1 >/dev/null"
+	$CMDLINE
+	echo "Daemon started. Please refresh the page."
+	sleep 5
+}
+
+utserver_stop()
+{
+	# no-op if not running
+	if [ ! -e /var/run/utserver/utserver-$PORT.pid ]; then
+		echo -n "utserver not running..."
+		sleep 0.5
+		echo
+		return
+	fi
+	echo "Stopping utserver..."
+	sleep 1
+	killall utserver
+	if [[ $? = 0 ]]; then
+		while [ -e /var/run/utserver/utserver-$PORT.pid  ]; do
+			echo "Cleaning..."
+			sleep 2
+			[ -f /var/run/utserver/utserver-$PORT.pid ] && rm /var/run/utserver/utserver-$PORT.pid
+		done
+		echo "Done..."
+	else
+		sudo -u root kill -9 $(cat /var/run/utserver/utserver-$PORT.pid)
+		while [ -e /var/run/utserver/utserver-$PORT.pid  ]; do
+			echo "Cleaning..."
+			sleep 2
+			[ -f /var/run/utserver/utserver-$PORT.pid ] && rm /var/run/utserver/utserver-$PORT.pid
+		done
+		echo "Done..."
+	fi
+	sleep 2
+}
+
+utserver_restart()
+{
+	utserver_stop
+	sleep 1
+	utserver_start
+}
+
+write_config()
+{
+	echo "# utserver configuration" > /boot/config/plugins/utserver/utserver.cfg
+	echo "SERVICE=\"$SERVICE\"" >> /boot/config/plugins/utserver/utserver.cfg
+	echo "INSTALLDIR=\"$INSTALLDIR\"" >> /boot/config/plugins/utserver/utserver.cfg
+	echo "DATADIR=\"$DATADIR\"" >> /boot/config/plugins/utserver/utserver.cfg
+	echo "TEMPDIR=\"$TEMPDIR\"" >> /boot/config/plugins/utserver/utserver.cfg
+	echo "PORT=\"$PORT\"" >> /boot/config/plugins/utserver/utserver.cfg
+	echo "RUNAS=\"$RUNAS\"" >> /boot/config/plugins/utserver/utserver.cfg
+	echo "VERSION=\"$VERSION\"" >> /boot/config/plugins/utserver/utserver.cfg
+	write_utconfig
+}
+
+write_utconfig()
+{
+	echo "#Configuration setting file for uTorrent for Linux" > $INSTALLDIR/utserver.conf
+	echo "#" >> $INSTALLDIR/utserver.conf
+
+	echo "#HTTP port for WebUI access" >> $INSTALLDIR/utserver.conf
+	echo "ut_webui_port: $PORT" >> $INSTALLDIR/utserver.conf
+	echo "#" >> $INSTALLDIR/utserver.conf
+
+	echo "#Torrent files location" >> $INSTALLDIR/utserver.conf
+	echo "dir_torrents: $INSTALLDIR/torrents" >> $INSTALLDIR/utserver.conf
+	if [ ! -e "$INSTALLDIR/torrents" ]; then
+		mkdir -p "$INSTALLDIR/torrents"
+		chown -R $RUNAS:users "$INSTALLDIR/torrents"
+	fi
+
+	echo "#Location for completed downloads" >> $INSTALLDIR/utserver.conf
+	echo "dir_completed: $DATADIR" >> $INSTALLDIR/utserver.conf
+	echo "#" >> $INSTALLDIR/utserver.conf
+	if [ ! -e "$DATADIR" ]; then
+		mkdir -p "$DATADIR"
+		chown -R $RUNAS:users "$INSTALLDIR"
+	fi
+
+	echo "#Temporary files location" >> $INSTALLDIR/utserver.conf
+	echo "dir_active: $TEMPDIR" >> $INSTALLDIR/utserver.conf
+	echo "#" >> $INSTALLDIR/utserver.conf
+	if [ ! -e "$TEMPDIR" ]; then
+		mkdir -p "$TEMPDIR"
+		chown -R $RUNAS:users "$TEMPDIR"
+	fi
+}
+
+utserver_enable()
+{
+	# if not already enabled, enable it
+	if [ "$SERVICE" != "enable" ]; then
+		SERVICE=enable
+		PORT="$2"
+		INSTALLDIR="$3"
+		DATADIR="$4"
+		TEMPDIR="$5"
+		VERSION=&6
+
+		if [ $DATADIR == "" ]; then
+			echo "Please specify Data directory"
+			return
+		fi
+
+		if [ $TEMPDIR == "" ]; then
+			$TEMPDIR=$DATADIR
+		fi
+
+
+		if [ $RUNAS != $1 ]; then
+			chown -R $1:users "$INSTALLDIR"
+		fi
+
+		RUNAS="$1"
+
+		# create utserver user if necessary
+		if [[ $RUNAS != "nobody" && $RUNAS != "root" ]]; then
+			if ( ! grep -q ^$RUNAS /etc/passwd ); then
+				useradd -r -g users -d / -s /bin/false $RUNAS &> /dev/null
+				cp /etc/passwd /etc/shadow /boot/config
+			fi
+		fi
+		write_config
+	fi
+	# enabling also starts it
+	utserver_start
+}
+
+utserver_disable()
+{
+	SERVICE=disable
+	PORT="$2"
+	INSTALLDIR="$3"
+	DATADIR="$4"
+	TEMPDIR="$5"
+
+	if [ $DATADIR == "" ]; then
+		echo "Please specify Data directory"
+		return
+	fi
+
+	if [ $TEMPDIR == "" ]; then
+		$TEMPDIR=$DATADIR
+	fi
+
+
+	if [ $RUNAS != $1 ]; then
+		chown -R $1:users "$INSTALLDIR"
+	fi
+
+	RUNAS="$1"
+
+	# create utserver user if necessary
+	if [[ $RUNAS != "nobody" && $RUNAS != "root" ]]; then
+		if ( ! grep -q ^$RUNAS /etc/passwd ); then
+			useradd -r -g users -d / -s /bin/false $RUNAS &> /dev/null
+			cp /etc/passwd /etc/shadow /boot/config
+		fi
+	fi
+	write_config
+	#if utserver is running, stop it
+	utserver_stop
+}
+
+utserver_install()
+{
+	#test if Cache drive is mounted before install
+	#while ! test -d /mnt/disk/Cache; do sleep 5; continue; done
+	if [ ! -e "$INSTALLDIR" ]; then
+		mkdir -p "$INSTALLDIR"
+	fi
+
+	if [ ! -e "$DATADIR" ]; then
+		mkdir -p "$DATADIR"
+	fi
+
+	if [ ! -e "$TEMPDIR" ]; then
+		mkdir -p "$TEMPDIR"
+		mkdir -p "$TEMPDIR/torrents"
+	fi
+
+	#check current version and extract version and download URL
+	cd /tmp
+
+	# Create temporary directory to download and extract files in
+	mkdir /tmp/utinstall
+	cd /tmp/utinstall
+
+	# Download utserver and untar
+	wget -q -O utserver.tar.gz http://download-new.utorrent.com/endpoint/utserver/os/linux-i386-debian-6-0/track/beta/
+
+	if [ ! -e "utserver.tar.gz" ]; then
+		echo "Error: Downloading failed."
+		sleep 5
+		return
+	fi
+
+	tar -xf utserver.tar.gz
+
+	# Get directory that files have been untared to and copy to $INSTALLDIR
+	SOURCEDIR="$(find /tmp/utinstall -name utserver -printf %h)"
+
+	if [ ! -e "$SOURCEDIR/utserver" ]; then
+		echo -n "Error: Source directory does not exist. Extracting failed."
+		sleep 5
+		return
+	fi
+
+	echo "Files extracted to $SOURCEDIR"
+	sleep 2
+
+	cd $SOURCEDIR
+	cp -Rf ./* $INSTALLDIR >/dev/null
+	chown -R $RUNAS:users "$INSTALLDIR"
+
+	echo "Copying files to $INSTALLDIR"
+	sleep 2
+
+	if [ ! -e "$INSTALLDIR/utserver" ]; then
+		echo "Error: Could not copy files to destination."
+		sleep 5
+		return
+	fi
+
+	rm -Rf /tmp/utinstall
+
+	echo "Installation completed..."
+	sleep 2
+
+	#Write utorrent.conf config file
+	write_config
+}
+
+utserver_datacheck()
+{
+	array=( ramfs proc tempfs sysfs )
+	fs=$( stat -f -c '%T' $DATADIR )
+	for i in "${array[@]}"
+	do
+		if [ $i = $fs ]; then
+		    echo "<p style="color:red\;margin-left:10px\;"><b>WARNING:</b>Your Data Directory is not persistent and WILL NOT survive a reboot. It may also lead to server instability and high RAM usage. Please locate Data Directory on disk for persistency</p>"
+			break
+		elif [ $i = msdos ]; then
+			echo "<p style="color:red\;margin-left:10px\;"><b>WARNING:</b>Your Data Directory is located on your flash drive. This will decrease your flash drives life span!</p>"
+			break
+		else
+			echo "<p style="color:green\;margin-left:10px\;">Your data will persist after a reboot</p>"
+			break
+		fi
+	done
+
+	fs=$( stat -f -c '%T' $TEMPDIR )
+	for i in "${array[@]}"
+	do
+		if [ $i = $fs ]; then
+		    echo "<p style="color:red\;margin-left:10px\;"><b>WARNING:</b>Your Temporary Directory is not persistent and WILL NOT survive a reboot. It may also lead to server instability and high RAM usage. Please locate Data Directory on disk for persistency</p>"
+			break
+		elif [ $i = msdos ]; then
+			echo "<p style="color:red\;margin-left:10px\;"><b>WARNING:</b>Your Temporary Directory is located on your flash drive. This will decrease your flash drives life span!</p>"
+			break
+		else
+			echo ""
+			break
+		fi
+	done
+}
+
+# read our configuration
+source /boot/config/plugins/utserver/utserver.cfg
+
+case "$1" in
+	'start')
+		utserver_start
+	;;
+	'stop')
+		utserver_stop
+	;;
+	'restart')
+		utserver_restart
+	;;
+	'enable')
+		utserver_enable $2 $3 $4 $5 $6
+	;;
+	'disable')
+		utserver_disable $2 $3 $4 $5 $6
+	;;
+	'install')
+		utserver_install
+	;;
+	'datacheck')
+		utserver_datacheck
+	;;
+	*)
+		echo "usage $0 start|stop|restart|enable|disable|install|datacheck"
+esac
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/utserver/utserver.page">
+<INLINE>
+<![CDATA[
+Menu="NetworkServices"
+Icon="utserver.png"
+Version="0.3.7"
+Author="p4xel"
+Type="php"
+Title="utserver"
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/utserver/utserver.png">
+<LOCAL>/boot/config/plugins/utserver/utserver.png</LOCAL>
+</FILE>
+
+<FILE Name="/usr/local/emhttp/plugins/utserver/utserver.php">
+<INLINE>
+<![CDATA[
+<?PHP
+$utserver_cfg = parse_ini_file( "/boot/config/plugins/utserver/utserver.cfg");
+$utserver_installed = file_exists( $utserver_cfg["INSTALLDIR"] . "/utserver" ) ? "yes" : "no";
+if ($utserver_installed=="yes")
+{
+	$utserver_datacheck = shell_exec ( "/etc/rc.d/rc.utserver datacheck" );
+	$utserver_running = file_exists( "/var/run/utserver/utserver-".$utserver_cfg['PORT'].".pid") ? "yes" : "no";
+	$utserver_installdirsize = trim(shell_exec( "if [ -e $utserver_cfg[INSTALLDIR] ]; then du -sh $utserver_cfg[INSTALLDIR] | cut -f1; else echo 0; fi"));
+	$utserver_datadirsize = trim(shell_exec( "if [ -e $utserver_cfg[DATADIR] ]; then du -sh $utserver_cfg[DATADIR] | cut -f1; else echo 0; fi" ));
+	$utserver_tempdirsize = trim(shell_exec( "if [ -e $utserver_cfg[TEMPDIR] ]; then du -sh $utserver_cfg[TEMPDIR] | cut -f1; else echo 0; fi" ));
+}
+?>
+	<form name="utserver_settings" method="POST" action="/update.htm" target="progressFrame">
+		 <input type="hidden" name="cmd" value="/etc/rc.d/rc.utserver">
+		 <table class="settings">
+			<tr>
+			<td>Enable utserver:</td>
+			<td><select name="arg1" size="1" onChange="checkINSTALLDIR(this.form);">
+				<?=mk_option($utserver_cfg['SERVICE'], "disable", "No");?>
+				<?=mk_option($utserver_cfg['SERVICE'], "enable", "Yes");?>
+				</select></td>
+			</tr>
+			<tr>
+				<td>Install directory:</td>
+				<td><input type="text" name="arg4" maxlength="60" value="<?=$utserver_cfg['INSTALLDIR'];?>"></td>
+			</tr>
+			<tr>
+				<td>Download directory:</td>
+				<td>
+					<!-- <input type="checkbox" name="use_data" <?=($utserver_cfg['DATADIR']!=$utserver_cfg['INSTALLDIR'])?"checked=\"checked\"":"";?>  onChange="checkDATADIR(this.form);"> -->
+					<input type="text" name="arg5" maxlength="60" value="<?=$utserver_cfg['DATADIR'];?>">
+				</td>
+			</tr>
+			<tr>
+				<td>Temporary directory:</td>
+				<td>
+					<!-- <input type="checkbox" name="use_temp" <?=($utserver_cfg['TEMPDIR']!=$utserver_cfg['INSTALLDIR'])?"checked=\"checked\"":"";?>  onChange="checkTEMPDIR(this.form);"> -->
+					<input type="text" name="arg6" maxlength="60" value="<?=$utserver_cfg['TEMPDIR'];?>">
+				</td>
+			</tr>
+			<tr>
+				<td>Port:</td>
+				<td><input type="text" name="arg3" maxlength="40" value="<?=$utserver_cfg['PORT'];?>"></td>
+			</tr>
+			<tr>
+				<td>Run as user:</td>
+				<td><select name="runas" size="1"  onChange="checkUSER(this.form);">
+					<?=mk_option($utserver_cfg['RUNAS'], "nobody", "nobody");?>
+					<?=mk_option($utserver_cfg['RUNAS'], "root", "root");?>
+					<option value='other'<?=($utserver_cfg['RUNAS'] != "root" && $utserver_cfg['RUNAS'] != "nobody")?" selected=yes":"" ;?>>other</option>
+					</select><input type="hidden" name="arg2" maxlength="40" value="<?=$utserver_cfg['RUNAS'];?>">
+				</td>
+			</tr>
+			<tr>
+			<td></td>
+			<td><input type="submit" name="runCmd" value="Apply"><button type="button" onClick="done();">Done</button></td>
+			</tr>
+		 </table>
+	</form>
+	<hr>
+<p style="font-size:16px;"><b>Additional informations:</b></p>
+<? if ($utserver_installed=="yes"): ?>
+	<? if ($utserver_running=="yes"): ?>
+		<p style="margin-left:10px;"><a href="http://<?=$var['NAME'];?>:<?=$utserver_cfg['PORT'];?>/gui" target="_blank">uTorrent server</a> is running with version: <b><?=$utserver_cfg['VERSION']?></b></p>
+	<? else: ?>
+		<p style="margin-left:10px;"><b>uTorrent server is not running</b></p>
+	<? endif; ?>
+	<? if ($utserver_installdirsize!=0 && $utserver_installdirsize!=""): ?>
+		<? if ($utserver_cfg["INSTALLDIR"] == $utserver_cfg["DATADIR"]): ?>
+			<p style="margin-left:10px;">uTorrent server storage memory usage: install + data directory: <b><?=$utserver_installdirsize?></b></p>
+		<? else: ?>
+			<p style="margin-left:10px;">uTorrent server storage memory usage: install directory: <b><?=$utserver_installdirsize?></b>, data directory: <b><?=$utserver_datadirsize?></b></p>
+		<? endif; ?>
+	<? endif; ?>
+	<?=$utserver_datacheck?>
+<? else: ?>
+	<p style="margin-left:10px;"><b>uTorrent server is not installed</b></p>
+<? endif; ?>
+<hr>
+
+<script type="text/javascript">
+function checkINSTALLDIR(form)
+{
+   if ("<?=$utserver_running;?>" == "yes") {
+      form.arg2.readOnly = true;
+      form.arg3.readOnly = true;
+      form.arg4.readOnly = true;
+      form.arg5.readOnly = true;
+      form.arg6.readOnly = true;
+	  form.runas.disabled = true;
+	  form.use_data.disabled = true;
+	  form.use_temp.disabled = true;
+   }
+   else {
+      form.arg2.readOnly = (form.arg1.value == "enable");
+      form.arg3.readOnly = (form.arg1.value == "enable");
+      form.arg4.readOnly = (form.arg1.value == "enable");
+	  form.arg5.readOnly = (form.arg1.value == "enable");
+	  form.arg6.readOnly = (form.arg1.value == "enable");
+      form.runas.disabled = (form.arg1.value == "enable");
+	  form.use_data.disabled = (form.arg1.value == "enable");
+	  form.use_temp.disabled = (form.arg1.value == "enable");
+   }
+}
+
+function checkUSER(form)
+{
+	if (form.runas.selectedIndex < 2 ) {
+		form.arg2.value = form.runas.options[form.runas.selectedIndex].value;
+		form.arg2.type = "hidden";
+	} else {
+		form.arg2.value = "<?=$utserver_cfg['RUNAS'];?>";
+		form.arg2.type = "text";
+	}
+}
+
+function checkDATADIR(form)
+{
+	if (form.use_data.checked == false ) {
+		form.arg5.type = "hidden";
+	} else {
+		form.arg5.value = "<?=$utserver_cfg['DATADIR'];?>";
+		form.arg5.type = "text";
+	}
+}
+
+function checkTEMPDIR(form)
+{
+	if (form.use_temp.checked == false ) {
+		form.arg6.type = "hidden";
+	} else {
+		form.arg6.value = "<?=$utserver_cfg['TEMPDIR'];?>";
+		form.arg6.type = "text";
+	}
+}
+
+checkINSTALLDIR(document.utserver_settings);
+checkUSER(document.utserver_settings);
+checkDATADIR(document.utserver_settings);
+checkTEMPDIR(document.utserver_settings);
+</script>
+
+]]>
+</INLINE>
+</FILE>
+
+<!-- event handler -->
+<FILE Name="/usr/local/emhttp/plugins/utserver/event/disks_mounted" Mode="0770">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+/etc/rc.d/rc.utserver start
+]]>
+</INLINE>
+</FILE>
+
+<!-- event handler -->
+<FILE Name="/usr/local/emhttp/plugins/utserver/event/unmounting_disks" Mode="0770">
+<INLINE>
+<![CDATA[
+#!/bin/bash
+/etc/rc.d/rc.utserver stop
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/tmp/utserver-install" Run="/bin/bash">
+<INLINE>
+<![CDATA[
+# include our config vars
+source /boot/config/plugins/utserver/utserver.cfg
+
+# create utserver-writable directory for pid file
+if [ ! -e /var/run/utserver ]; then
+  mkdir /var/run/utserver
+  chown $RUNAS:users /var/run/utserver
+  chmod 0777 /var/run/utserver
+fi
+
+rm /tmp/utserver-install
+]]>
+</INLINE>
+</FILE>
+
+<FILE Name="/var/log/plugins/utserver">
+<INLINE>
+<![CDATA[
+
+]]>
+</INLINE>
+</FILE>
+
+</PLUGIN>
