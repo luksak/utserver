@@ -6,14 +6,14 @@ Provides a plugin fo unRAID for running µTorrent Server.
 Some notes
 ----------
 
-    Script downloads utserver (utorrent server for linux) from utorrent website (current version - 3.0 build 27079)
-    Default installation directory is /mnt/cache/apps/utserver, please change it according to your unRaid configuration
-    Default port is 8003
-    Default login is "admin" with no password
-    Please specify temporary and download directory location. Do not locate any of those on ramfs or flash.
-    Recommended location for installation and temporary directories is a cache drive. Best way is to create a user share and set it to be "cache only". If you don't want it to be accessible from the network, set Export to No.
-    Default WebUI address is http://tower:8003/gui.
-    You can set more advanced options in uTorrent WebUI. They are overriding those set in plugin settings page. If you need to reset, go to utserver install directory and remove following files: settings.dat, settings.dat.old
+- Script downloads utserver (utorrent server for linux) from utorrent website (current version - 3.0 build 27079)
+- Default installation directory is /mnt/cache/apps/utserver, please change it according to your unRaid configuration
+- Default port is 8003
+- Default login is "admin" with no password
+- Please specify temporary and download directory location. Do not locate any of those on ramfs or flash.
+- Recommended location for installation and temporary directories is a cache drive. Best way is to create a user share and set it to be "cache only". If you don't want it to be accessible from the network, set Export to No.
+- Default WebUI address is http://tower:8003/gui.
+- You can set more advanced options in uTorrent WebUI. They are overriding those set in plugin settings page. If you need to reset, go to utserver install directory and remove following files: settings.dat, settings.dat.old
 
 
 You can download plugin at the bottom of this post.
@@ -21,11 +21,15 @@ You can download plugin at the bottom of this post.
 Installation
 ------------
 
-    Put the plugin into your plugin directory - copy the file into your unRaid network share (by default \\tower\flash\config\plugins)
-    Restart your unRaid box, or install plugin via telnet (recommended)
-        cd /boot/config/plugins
-        installplg utserver.plg
-    Go to unRaid Settings menu, set paths and port according to your needs, enable plugin and click Apply 
+- Put the plugin into your plugin directory - copy the file into your unRaid network share (by default \\tower\flash\config\plugins)
+- Restart your unRaid box, or install plugin via telnet (recommended):
+
+```
+cd /boot/config/plugins
+installplg utserver.plg
+```
+  
+- Go to unRaid Settings menu, set paths and port according to your needs, enable plugin and click Apply 
 
 
 When updating, you may need to delete previous files manually:
